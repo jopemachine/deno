@@ -16,7 +16,7 @@ import {
   ERR_MISSING_ARGS,
 } from "./_errors.ts";
 
-import { clearTimeout } from "./timers.ts"
+import { clearTimeout } from "./timers.ts";
 import { DenoStdInternalError } from "../_util/assert.ts";
 import { notImplemented } from "./_utils.ts";
 import { Buffer } from "./buffer.ts";
@@ -105,8 +105,8 @@ export class Socket extends stream.Duplex {
   public pending: boolean = false;
   public readyState: boolean = false;
   public bufferSize: number = 0;
-  
-  public localAddress: string = '';
+
+  public localAddress: string = "";
   public localPort: number = -1;
 
   pause = () => {
@@ -163,7 +163,6 @@ export class Socket extends stream.Duplex {
 
   public destorySoon() {
     if (this.writable) this.end();
-
     if (this.writableFinished) this.destroy();
     else this.once("finish", this.destroy);
   }
@@ -174,26 +173,79 @@ export class Socket extends stream.Duplex {
 
   public conn: Deno.Conn | undefined = undefined;
 
+  public connect(path: string, connectionListener?: GenericFunction): Socket;
+
+  public connect(
+    port: number,
+    host: string,
+    connectionListener?: GenericFunction
+  ): Socket;
+
   public connect(
     options: TcpSocketConnectOpts | IpcSocketConnectOpts,
-    connectionListener?: () => void
-  ) {
-    let connectionPromise: Promise<Deno.Conn>;
+    connectionListener?: GenericFunction
+  ): Socket;
 
-    if ("port" in options) {
-      // tcp
-      options = options as TcpSocketConnectOpts;
+  public connect(arg1: any, arg2?: any, arg3?: any) {
+    let connectionPromise: Promise<Deno.Conn>;
+    let path, port, host, options, connectionListener: any;
+
+    // * arg1: port
+    // * arg2: host
+    // * arg3: connectionListener
+    if (typeof arg1 === "number" && arg2 && typeof arg2 === "string") {
+      port = arg1;
+      host = arg2;
+      connectionListener = arg3;
+
+      if (connectionListener !== null) {
+        this.once("listening", connectionListener!);
+      }
+
       connectionPromise = Deno.connect({
-        port: options.port,
+        port,
         transport: "tcp",
       });
-    } else {
-      // ipc (not support windows using named pipe)
-      options = options as IpcSocketConnectOpts;
+    }
+
+    // handle 'path', 'connectionListener'
+    else if (typeof arg1 === "string" && arg2 && !arg3) {
+      path = arg1;
+      connectionListener = arg2;
+
+      if (connectionListener !== null) {
+        this.once("listening", connectionListener!);
+      }
+
       connectionPromise = Deno.connect({
-        path: options.path,
+        path,
         transport: "unix",
       });
+    }
+
+    // handle 'options', 'connectionListener'
+    else {
+      options = arg1;
+      connectionListener = arg2;
+      if (connectionListener !== null) {
+        this.once("listening", connectionListener!);
+      }
+
+      if ("port" in options) {
+        // tcp
+        options = options as TcpSocketConnectOpts;
+        connectionPromise = Deno.connect({
+          port: options.port,
+          transport: "tcp",
+        });
+      } else {
+        // ipc (not support windows using named pipe)
+        options = options as IpcSocketConnectOpts;
+        connectionPromise = Deno.connect({
+          path: options.path,
+          transport: "unix",
+        });
+      }
     }
 
     let bindConnection = (con: Deno.Conn) => {
@@ -207,29 +259,40 @@ export class Socket extends stream.Duplex {
       bindConnection(con);
       connectionListener && connectionListener();
     });
+
+    return this;
   }
 
-  public setTimeout(timeout: number, callback: Function) {
-
-  }
-
+  public setTimeout(timeout: number, callback: Function) {}
 }
 
 export class Server extends EventEmitter {
-  constructor(options: any, connectionListener: any) {
+  constructor(options: any, connectionListener: (socket: Socket) => {}) {
     super();
+    this.connectionListener = connectionListener;
   }
 
+  private connectionListener: (socket: Socket) => {};
+
   public listening: boolean = false;
-
   public maxConnections: number = -1;
-
   public listener: Deno.Listener | undefined = undefined;
 
-  public async listen(options: ListenOptions, callback: GenericFunction) {
-    if (callback !== null) {
-      this.once('listening', callback);
+  public async listen(
+    options: ListenOptions,
+    connectionListener: GenericFunction
+  ) {
+
+    if (connectionListener !== null) {
+      this.once("listening", () => {
+        this.listening = true;
+        connectionListener();
+      });
     }
+
+    this.once("close", () => {
+      this.listening = false;
+    })
 
     if ("port" in options) {
       // tcp
@@ -239,12 +302,11 @@ export class Server extends EventEmitter {
         transport: "tcp",
       });
 
-      this.emit('listening');
+      this.emit("listening");
 
       for await (const conn of this.listener) {
-        
-      }
 
+      }
     } else if ("path" in options) {
       // ipc (not support windows using named pipe)
       this.listener = Deno.listen({
@@ -255,12 +317,12 @@ export class Server extends EventEmitter {
       //   throw new ERR_INVALID_ARG_VALUE('options', options,
       //                                   'must have the property "port" or "path"');
     }
-  
+
     // throw new ERR_INVALID_ARG_VALUE('options', options);
   }
 
   public address() {
-    if (this.listener?.addr.transport === 'tcp') {
+    if (this.listener?.addr.transport === "tcp") {
       // tcp
       return (this.listener!.addr as Deno.NetAddr).hostname;
     } else {
@@ -268,14 +330,12 @@ export class Server extends EventEmitter {
     }
   }
 
-  public getConnections(cb: any) {  }
+  public getConnections(cb: any) {}
 
-  public connections() {
-
-  }
+  public connections() {}
 
   public close(cb: any) {
-    this.listener?.close();
+    this.listener && this.listener.close();
   }
 
   public ref() {}
@@ -305,23 +365,15 @@ export function createServer(options: any, connectionListener: any) {
   return new Server(options, connectionListener);
 }
 
-export function createConnection() {
-  
-}
+export function createConnection() {}
 
-export function isIP(input: string) {
+export function isIP(input: string) {}
 
-}
+export function isIPv4(input: string) {}
 
-export function isIPv4(input: string) {
-
-}
-
-export function isIPv6(input: string) {
-
-}
+export function isIPv6(input: string) {}
 
 export default {
   Server,
-  Socket
+  Socket,
 };
